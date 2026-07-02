@@ -47,6 +47,10 @@
   #bA{width:84px;height:84px;right:0;bottom:0;font-size:27px;background:#d84858;border:3px solid #ff8090;box-shadow:0 5px 0 #80202c;}
   #bB{width:62px;height:62px;left:4px;top:47px;font-size:21px;background:#3868c8;border:3px solid #6c9cf0;box-shadow:0 4px 0 #1c3470;}
   .abtn:active,.abtn.on{transform:translateY(3px);box-shadow:none;filter:brightness(1.25);}
+  /* 押せない時: グレー表示(押下フィードバックも無効化) */
+  .abtn.dis{background:#3a3c48!important;border-color:#55586a!important;box-shadow:0 4px 0 #23242c!important;color:#8b8fa0!important;filter:none!important;}
+  .abtn.dis small{color:#7a7e90!important;}
+  .abtn.dis:active{transform:none!important;box-shadow:0 4px 0 #23242c!important;filter:none!important;}
   .abtn small{font-size:10px;font-weight:normal;margin-top:-2px;}
 
   #help{font-size:11px;line-height:1.6;padding:4px 10px 16px;max-width:740px;text-align:center;color:#7a83bb;}
@@ -1402,8 +1406,10 @@ function cpuAutoSubstitute(tm) {
   if (bestSlot >= 0 && bestCand && bestGain > 12) {
     const outP = T.players[bestSlot];
     if (doSubstitute(T, bestSlot, bestCand)) {
-      // 相手側の交代は簡易バナーで通知(演出はプレイヤー側のみ)
-      M.msg = '相手交代: ' + outP.name + ' → ' + bestCand.name;
+      // プレイヤーと同じ選手交代ポップアップ演出を再生(team指定で相手チーム色になる)
+      M.subFx = { t: 0, slot: bestSlot, team: tm,
+                  outName: outP.name, outNum: outP.num,
+                  inName: bestCand.name, inNum: bestCand.num };
     }
   }
 }
@@ -1484,6 +1490,8 @@ function maybeComTimeout() {
   if (target === 25 && ps >= 20 && cs < 20) trigger = true;
   // ⑤ COMが22点以降で、プレイヤーに2点差まで追いつかれる
   if (cs >= 22 && (cs - ps) >= 0 && (cs - ps) <= 2) trigger = true;
+  // ⑥ COMが負けていて、プレイヤーが勝利まで残り5点以下、かつ直前にプレイヤーが得点(流れは上のガードでプレイヤー側)
+  if (cs < ps && (target - ps) <= 5 && run0 >= 1) trigger = true;
   if (!trigger) return false;
   return (rnd() < 0.6) && takeTimeout(1);         // 検討(毎回は取らない)
 }
@@ -1625,7 +1633,7 @@ function update() {
               if (doSubstitute(team, slot, cand)) {
                 sBest();
                 // 交代演出をセット(試合画面に戻った時に再生)
-                M.subFx = { t: 0, slot, outName: outP.name, outNum: outP.num,
+                M.subFx = { t: 0, slot, team: 0, outName: outP.name, outNum: outP.num,
                             inName: cand.name, inNum: cand.num };
                 statView = null;                 // 画面を閉じて試合へ戻る
               } else sBad();
@@ -4773,6 +4781,8 @@ function drawMatch() {
 
   if (ph === 'whistle') {
     if (M.t > 8 && M.t < 46) shText('ピイィッ!!', 256, 150, 24, '#ffe060', 'center');
+    // 笛が鳴った時点から、プレイヤーサーブのジャストゲージを先出し表示
+    if (M.serve === 0) gaugeBar(140, 372, 232, 0);
   }
 
   if (ph === 'serve') {
@@ -4801,7 +4811,7 @@ function drawMatch() {
     dude(sx, sy, M.serve, s.stage >= 1 ? 'spike' : 'stand', 0, s.server);
     // ボールの影はサーバーの足元(sy)の床に落とす(サーバーの影と高さを揃える)
     ballDraw(sx + (M.serve === 0 ? 10 : -10), sy - 48 - tossUp, true, sy);
-    if (M.serve === 0 && s.stage === 1) gaugeBar(140, 372, 232, s.g);
+    if (M.serve === 0) gaugeBar(140, 372, 232, s.stage >= 1 ? s.g : 0);
     if (s.cheer) drawCheer(s.server.name);
     if (s.ace) drawAceFx(s.server.name);
   }
@@ -5350,7 +5360,8 @@ function drawTutorial() {
 /* 選手交代演出: 退く選手が左へ、入る選手が右から登場するスライド + バナー */
 function drawSubFx() {
   const fx = M.subFx, t = fx.t;
-  const team = TEAMS[0];
+  const team = TEAMS[fx.team || 0];
+  const teamNm = team ? (team.short || team.name || '') : '';
   // フェーズ: 0-18 入場, 18-92 表示, 92-110 退場
   let alpha = 1;
   if (t < 18) alpha = t / 18;
@@ -5369,7 +5380,7 @@ function drawSubFx() {
   px(bx, by, bw, bh, 'rgba(12,16,40,0.96)');
   px(bx, by, bw, 4, '#ffd040'); px(bx, by + bh - 4, bw, 4, '#cc3030');
   ctx.strokeStyle = '#e8b030'; ctx.lineWidth = 2; ctx.strokeRect(bx + 1, by + 1, bw - 2, bh - 2);
-  shText('★ 選手交代 ★', 256, by + 10, 16, '#ffd040', 'center');
+  shText('★ ' + teamNm + ' 選手交代 ★', 256, by + 10, 16, '#ffd040', 'center');
 
   // OUT 選手(左から、退く) — 赤系・左へスライド
   const outX = bx + 40 - (1 - slideIn) * 60;
@@ -6498,6 +6509,57 @@ function drawTourney() {
 }
 
 /* ---------------- メインループ ---------------- */
+/* ===== アクションボタン(Z/B/V)の有効・無効判定 =====
+   押せない文脈ではボタンをグレー表示にする。判断に迷う場合は「有効」に倒す(誤グレーを避ける)。*/
+function actionBtnState() {
+  const sc = G.scene;
+  // オープニング/動画中はパッド自体が隠れる
+  if (sc === 'opening' || sc === 'openingAnim') return { z: false, b: false, v: false };
+  // 選手データ/交代パネル表示中: 選択・戻る・閉じるが可能
+  if (statView) return { z: true, b: true, v: true };
+  if (sc === 'match') return matchBtnState();
+  // ---- メニュー系シーン ----
+  // Vが意味を持つ(詳細/プロフィール/名前決定)シーン
+  const vScenes = { storyName: 1, teamSelect: 1, oppSelect: 1, rivalSelect: 1, roster: 1 };
+  let v = !!vScenes[sc];
+  if (sc === 'league' && G.mode === 'story' && G.storyPlayer) v = true;
+  // Z(決定)はメニューでほぼ常に有効。B(戻る/キャンセル)はタイトル以外で有効。
+  const z = true;
+  const b = (sc !== 'title');
+  return { z, b, v };
+}
+function matchBtnState() {
+  if (!M) return { z: true, b: true, v: false };
+  if (G.tut) return { z: true, b: true, v: true };     // チュートリアル中は誤操作防止のため触らない
+  if (M.toFx) return { z: false, b: false, v: false }; // タイムアウト演出中はポーズ
+  if (M.flowMenu) return { z: true, b: true, v: true };// Vメニュー操作中
+  const ph = M.phase, recvTeam = 1 - M.serve;
+  let z = false, b = false, v = false;
+  switch (ph) {
+    case 'coinToss': if (M.t >= 96) { z = true; b = true; } break;
+    case 'plan':  v = true; break;                       // Vでタイムアウト/交代メニュー
+    case 'point': v = true; break;
+    case 'serve':    if (M.serve === 0) z = true; break; // プレイヤーのトス/サーブ
+    case 'serveFly': if (recvTeam === 0) z = true; break;// プレイヤーのレシーブ
+    case 'attackSeq':
+      if (M.atkTeam === 1) { z = true; b = true; }        // プレイヤーのブロック(Z/Xどちらでも)
+      break;                                              // プレイヤー攻撃時は数字+矢印のみ
+    // whistle/recvMsg/serveFault/outcome 等は待機 → 全て無効
+  }
+  return { z, b, v };
+}
+let _btnEls = null;
+function syncActionButtons() {
+  if (!_btnEls) {
+    _btnEls = { z: document.getElementById('bA'), b: document.getElementById('bB'), v: document.getElementById('bV') };
+  }
+  if (!_btnEls.z) return;
+  const st = actionBtnState();
+  _btnEls.z.classList.toggle('dis', !st.z);
+  _btnEls.b.classList.toggle('dis', !st.b);
+  _btnEls.v.classList.toggle('dis', !st.v);
+}
+
 function frame() {
   update();
   ctx.clearRect(0, 0, W, H);
@@ -6533,6 +6595,7 @@ function frame() {
       drawStatPanel(statView.team, statView.idx, 36, 120, 440);
     }
   }
+  syncActionButtons();
   requestAnimationFrame(frame);
 }
 
