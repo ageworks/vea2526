@@ -6095,9 +6095,11 @@ function drawTeamGrid(titleTxt, subTxt, lockIdx) {
     px(cx, cy, cw, 5, t.shirt); px(cx, cy + 5, cw, 3, t.pants);
     if (sel) { ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 3; ctx.strokeRect(cx + 1, cy + 1, cw - 2, ch - 2); }
     else { ctx.strokeStyle = '#3a3e70'; ctx.lineWidth = 1; ctx.strokeRect(cx + 0.5, cy + 0.5, cw - 1, ch - 1); }
-    // ミニ選手(ユニ色プレビュー・パース無し)
+    // ミニ選手(ユニ色プレビュー・パース無し)。通常ユニフォームを表示するため
+    // リベロ(pos==='L')以外の選手を代表として使う(#1がリベロのチーム対策)。
     const prev = { col: t.pants, col2: t.shirt, skin: '#f0c8a0' };
-    dude(cx + 26, cy + ch - 10, prev, 'stand', 0, t.roster[0]);
+    const prevP = t.roster.find(pl => pl.pos !== 'L') || t.roster[0];
+    dude(cx + 26, cy + ch - 10, prev, 'stand', 0, prevP);
     // 名前
     text(t.name, cx + 48, cy + 16, 12, locked ? '#6a6a8a' : (sel ? '#ffd76a' : '#e8ecff'));
     text(t.short, cx + 48, cy + 34, 10, '#8a96d8');
