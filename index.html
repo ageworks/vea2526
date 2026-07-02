@@ -27,6 +27,11 @@
         border-radius:8px;color:#cfd2ff;font-size:20px;display:flex;align-items:center;
         justify-content:center;font-weight:bold;}
   .dbtn:active,.dbtn.on{background:#4858c0;border-color:#7c8cf0;}
+  /* 方向ボタン: 押せる時=三角と枠が黄色 / 押せない時=グレー */
+  .dbtn.act{background:#3a3410;border-color:#ffe060;color:#ffe060;}
+  .dbtn.act:active,.dbtn.act.on{background:#5a5018;border-color:#fff0a0;color:#fff0a0;}
+  .dbtn.dis{background:#2c2e3a;border-color:#44465a;color:#6a6e80;}
+  .dbtn.dis:active,.dbtn.dis.on{background:#2c2e3a;border-color:#44465a;}
   #dU{left:47px;top:0;} #dD{left:47px;top:94px;} #dL{left:0;top:47px;} #dR{left:94px;top:47px;}
   #dpadc{left:47px;top:47px;width:46px;height:46px;}
 
@@ -36,6 +41,13 @@
         color:#cfd2ff;font-size:17px;font-weight:bold;display:flex;flex-direction:column;
         align-items:center;justify-content:center;line-height:1.05;}
   .nbtn:active,.nbtn.on{background:#3a4490;border-color:#7c8cf0;}
+  /* 作戦ボタン: 押せる時=黄色 / 押せない時=グレー */
+  .nbtn.act{background:#e0b800;border-color:#ffe060;color:#2a2410;}
+  .nbtn.act small{color:#5a4e10;}
+  .nbtn.act:active,.nbtn.act.on{background:#ffd020;border-color:#fff0a0;}
+  .nbtn.dis{background:#2c2e3a;border-color:#44465a;color:#7a7e90;}
+  .nbtn.dis small{color:#6a6e80;}
+  .nbtn.dis:active,.nbtn.dis.on{background:#2c2e3a;border-color:#44465a;}
   .nbtn small{font-size:9px;color:#9aa6d8;margin-top:1px;}
   #bV{position:absolute;left:68px;top:0;width:52px;height:52px;background:#2a9e58;border:3px solid #5ad890;box-shadow:0 4px 0 #155030;font-size:18px;}
   #bV small{font-size:7px;line-height:1.1;text-align:center;}
@@ -6548,16 +6560,75 @@ function matchBtnState() {
   }
   return { z, b, v };
 }
-let _btnEls = null;
+/* 作戦ボタン(1-6)が押せる文脈か。試合中の「プレイヤー作戦入力」と「プレイヤー攻撃の1回目タッチ」でのみ有効。*/
+function strategyBtnActive() {
+  if (G.scene !== 'match' || !M) return false;
+  if (M.toFx || M.flowMenu || statView) return false;
+  if (M.phase === 'plan' && (1 - M.serve) === 0) return true;                 // プレイヤーが作戦入力
+  if (M.phase === 'attackSeq' && M.atkTeam === 0 && M.atk && !M.atk.touched && M.t < TOSS_MID) return true;  // 攻撃1回目タッチ
+  return false;
+}
+/* 方向ボタン(上下左右)の有効判定。シーン/フェーズごとに使える方向のみ黄色にする。*/
+const DIR_MAP = {
+  title:{u:0,d:0,l:0,r:0}, modeSelect:{u:1,d:1,l:0,r:0}, saveSlotSelect:{u:1,d:1,l:0,r:0},
+  continuePrompt:{u:1,d:1,l:0,r:0}, leagueSizeSelect:{u:1,d:1,l:0,r:0}, storyName:{u:1,d:1,l:1,r:1},
+  storyPos:{u:1,d:1,l:0,r:0}, storyTeam:{u:1,d:1,l:1,r:1}, storyLevel:{u:1,d:1,l:0,r:0},
+  storyProfile:{u:0,d:0,l:0,r:0}, levelSelect:{u:1,d:1,l:0,r:0}, teamSelect:{u:1,d:1,l:1,r:1},
+  rivalSelect:{u:1,d:1,l:1,r:1}, oppSelect:{u:1,d:1,l:1,r:1}, roster:{u:1,d:1,l:1,r:1},
+  tourney:{u:0,d:0,l:0,r:0}, league:{u:0,d:0,l:1,r:1}, end:{u:0,d:0,l:0,r:0},
+};
+function dirBtnState() {
+  const sc = G.scene;
+  if (sc === 'opening' || sc === 'openingAnim') return { u:0, d:0, l:0, r:0 };
+  if (statView) return { u:0, d:0, l:1, r:1 };   // 選手データ/交代は左右で切替
+  if (sc === 'match') return matchDirState();
+  return DIR_MAP[sc] || { u:1, d:1, l:1, r:1 };
+}
+function matchDirState() {
+  if (!M) return { u:1, d:1, l:1, r:1 };
+  if (G.tut) return { u:1, d:1, l:1, r:1 };           // チュートリアル中は触らない
+  if (M.toFx) return { u:0, d:0, l:0, r:0 };           // タイムアウト演出中
+  if (M.flowMenu) return { u:1, d:1, l:0, r:0 };       // Vメニュー: 上下で選択
+  let u=0, d=0, l=0, r=0;
+  switch (M.phase) {
+    case 'serve':
+      if (M.serve === 0 && M.srv && M.srv.stage === 0) { u=1; d=1; }   // 狙うレーンを上下で選択
+      break;
+    case 'attackSeq':
+      if (M.atkTeam === 0) {                            // プレイヤー攻撃
+        if (M.atk && M.atk.touched && M.atk.tButton === null) { u=1; d=1; l=1; r=1; }  // 2回目=コース(全方向)
+      } else {                                          // プレイヤーのブロック
+        u=1; d=1;                                        // 上下でブロックレーン移動
+      }
+      break;
+    // plan / serveFly / point / whistle 等は矢印未使用 → 全てグレー
+  }
+  return { u, d, l, r };
+}
+let _btnEls = null, _numEls = null, _dirEls = null;
 function syncActionButtons() {
   if (!_btnEls) {
     _btnEls = { z: document.getElementById('bA'), b: document.getElementById('bB'), v: document.getElementById('bV') };
+    _numEls = Array.from(document.querySelectorAll('#numrow .nbtn'));
+    _dirEls = { u: document.getElementById('dU'), d: document.getElementById('dD'),
+                l: document.getElementById('dL'), r: document.getElementById('dR') };
   }
   if (!_btnEls.z) return;
   const st = actionBtnState();
   _btnEls.z.classList.toggle('dis', !st.z);
   _btnEls.b.classList.toggle('dis', !st.b);
   _btnEls.v.classList.toggle('dis', !st.v);
+  // 作戦ボタン(1-6): 押せる時=黄色(act) / 押せない時=グレー(dis)
+  const nOn = strategyBtnActive();
+  for (const el of _numEls) { el.classList.toggle('act', nOn); el.classList.toggle('dis', !nOn); }
+  // 方向ボタン: 押せる方向=黄色(act) / 押せない=グレー(dis)
+  const dst = dirBtnState();
+  if (_dirEls.u) {
+    _dirEls.u.classList.toggle('act', !!dst.u); _dirEls.u.classList.toggle('dis', !dst.u);
+    _dirEls.d.classList.toggle('act', !!dst.d); _dirEls.d.classList.toggle('dis', !dst.d);
+    _dirEls.l.classList.toggle('act', !!dst.l); _dirEls.l.classList.toggle('dis', !dst.l);
+    _dirEls.r.classList.toggle('act', !!dst.r); _dirEls.r.classList.toggle('dis', !dst.r);
+  }
 }
 
 function frame() {
