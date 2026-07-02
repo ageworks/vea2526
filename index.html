@@ -6273,6 +6273,8 @@ function drawLeague() {
     const dStr = (r.diff >= 0 ? '+' : '') + r.diff;
     text(dStr, tx + 232, ry + 8, 10, r.diff >= 0 ? '#9ad0a0' : '#d0a0a0');
   });
+  // 順位表の下端(この下に電光掲示板・メッセージを配置し、表と重ならないようにする)
+  const standBottom = ty + 22 + st.length * rh;
 
   // ===== 個人賞ランキング =====
   const tab = L.leaderTab || 0;
@@ -6307,7 +6309,7 @@ function drawLeague() {
 
   // ===== 前節の全試合結果(電光掲示板・右→左スクロール) =====
   if (L.lastRound && L.lastRound.length) {
-    const bx = 16, by = 206, bw = 480, bh = 20, fs = 12;
+    const bx = 16, by = standBottom + 8, bw = 480, bh = 20, fs = 12;   // 順位表の下に配置
     // LEDボード風の枠
     px(bx, by, bw, bh, '#080810');
     px(bx, by, bw, 2, '#5a5220'); px(bx, by + bh - 2, bw, 2, '#5a5220');
@@ -6333,42 +6335,44 @@ function drawLeague() {
     ctx.restore();
   }
 
-  // ===== 下部メッセージ =====
-  px(28, 232, 456, 70, 'rgba(8,10,30,0.62)');
-  ctx.strokeStyle = '#3a4a80'; ctx.lineWidth = 1; ctx.strokeRect(28.5, 232.5, 455, 69);
+  // ===== 下部メッセージ(順位表・電光掲示板の下に配置) =====
+  const mby = standBottom + 34;                 // メッセージボックス上端
+  const mbh = Math.max(64, H - mby - 6);         // 画面下端までの高さ
+  px(28, mby, 456, mbh, 'rgba(8,10,30,0.62)');
+  ctx.strokeStyle = '#3a4a80'; ctx.lineWidth = 1; ctx.strokeRect(28.5, mby + 0.5, 455, mbh - 1);
   if (L.done) {
     const champ = L.champion;
     for (let i = 0; i < 24; i++) {
-      const x = (i * 53 + G.t * 2) % W, y = (i * 31 + G.t * 3) % 50 + 240;
+      const x = (i * 53 + G.t * 2) % W, y = (i * 31 + G.t * 3) % 50 + mby + 8;
       px(x, y, 3, 3, ['#ffd040', '#ff7090', '#7cff8a', '#7cd8ff'][i % 4]);
     }
     const seasonTag = (G.mode === 'story') ? ((G.story && G.story.season || 1) + 'シーズン目 ') : '';
     if (champ === G.myTeam) {
-      shText('★ ' + seasonTag + 'リーグ優勝！ おめでとう！ ★', 256, 246, 15, '#ffd040', 'center');
-      text(LEAGUE[champ].name + ' が栄冠を手にした!', 256, 272, 11, '#ffe080', 'center');
+      shText('★ ' + seasonTag + 'リーグ優勝！ おめでとう！ ★', 256, mby + 14, 15, '#ffd040', 'center');
+      text(LEAGUE[champ].name + ' が栄冠を手にした!', 256, mby + 40, 11, '#ffe080', 'center');
     } else {
-      shText(seasonTag + LEAGUE[champ].name + ' がリーグ優勝', 256, 248, 14, '#cfd8ff', 'center');
-      text('お疲れさま！ 順位表で結果を確認しよう', 256, 274, 10, '#9aa6d8', 'center');
+      shText(seasonTag + LEAGUE[champ].name + ' がリーグ優勝', 256, mby + 16, 14, '#cfd8ff', 'center');
+      text('お疲れさま！ 順位表で結果を確認しよう', 256, mby + 42, 10, '#9aa6d8', 'center');
     }
     if (G.t % 60 < 38) {
-      if (G.mode === 'story') text('Zボタンで 次シーズンを続ける ／ Xボタンで 保存してタイトルへ', 256, 290, 10, '#7cff8a', 'center');
-      else text('Zボタンで タイトルへ', 256, 290, 10, '#7cff8a', 'center');
+      if (G.mode === 'story') text('Zボタンで 次シーズンを続ける ／ Xボタンで 保存してタイトルへ', 256, mby + 58, 10, '#7cff8a', 'center');
+      else text('Zボタンで タイトルへ', 256, mby + 58, 10, '#7cff8a', 'center');
     }
   } else {
     const fx = leagueNextMyFixture();
     const stage = G.lgView ? G.lgView.stage : 'intro';
     if (stage === 'result') {
-      shText('試合終了！ 順位が更新されました', 256, 242, 13, '#7cff8a', 'center');
-      if (G.lgView && G.lgView.saved) text('スロット ' + ((G.saveSlot || 0) + 1) + ' にオートセーブしました', 256, 260, 10, '#ffd76a', 'center');
+      shText('試合終了！ 順位が更新されました', 256, mby + 10, 13, '#7cff8a', 'center');
+      if (G.lgView && G.lgView.saved) text('スロット ' + ((G.saveSlot || 0) + 1) + ' にオートセーブしました', 256, mby + 28, 10, '#ffd76a', 'center');
     } else {
-      shText('リーグ戦 スタート!', 256, 244, 15, '#ffd040', 'center');
+      shText('リーグ戦 スタート!', 256, mby + 12, 15, '#ffd040', 'center');
     }
     if (fx) {
       const homeAway = (fx.home === G.myTeam) ? '(ホーム)' : '(アウェイ)';
       const opp = (fx.home === G.myTeam) ? fx.away : fx.home;
-      text('次戦: ' + LEAGUE[opp].name + ' ' + homeAway, 256, 276, 11, '#cfd8ff', 'center');
+      text('次戦: ' + LEAGUE[opp].name + ' ' + homeAway, 256, mby + 44, 11, '#cfd8ff', 'center');
     }
-    if (G.t % 60 < 38) text('Zボタンで 次の試合へ', 256, 292, 10, '#7cff8a', 'center');
+    if (G.t % 60 < 38) text('Zボタンで 次の試合へ', 256, mby + 60, 10, '#7cff8a', 'center');
   }
 }
 
