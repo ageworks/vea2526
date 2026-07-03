@@ -49,8 +49,7 @@
   .nbtn.dis small{color:#6a6e80;}
   .nbtn.dis:active,.nbtn.dis.on{background:#2c2e3a;border-color:#44465a;}
   .nbtn small{font-size:9px;color:#9aa6d8;margin-top:1px;}
-  #bV{position:absolute;left:68px;top:0;width:52px;height:52px;background:#2a9e58;border:3px solid #5ad890;box-shadow:0 4px 0 #155030;font-size:18px;}
-  #bV small{font-size:7px;line-height:1.1;text-align:center;}
+  #bV{position:absolute;left:52px;top:-8px;width:62px;height:62px;background:#2a9e58;border:3px solid #5ad890;box-shadow:0 4px 0 #155030;font-size:21px;}
 
   /* アクションボタン: Z/X(B)/V を等間隔の三角配置(Z=大きく右下 / B=左で少し上=←/→と上端揃え / V=頂点) */
   .acol{position:relative;width:154px;height:140px;margin:0 auto;}
@@ -63,7 +62,8 @@
   .abtn.dis{background:#3a3c48!important;border-color:#55586a!important;box-shadow:0 4px 0 #23242c!important;color:#8b8fa0!important;filter:none!important;}
   .abtn.dis small{color:#7a7e90!important;}
   .abtn.dis:active{transform:none!important;box-shadow:0 4px 0 #23242c!important;filter:none!important;}
-  .abtn small{font-size:10px;font-weight:normal;margin-top:-2px;}
+  /* キャプション(アルファベット以外の文字)は全ボタン共通サイズ。word-break:keep-allで単語の途中改行を防ぐ */
+  .abtn small{font-size:7px;font-weight:normal;margin-top:-2px;line-height:1.1;text-align:center;word-break:keep-all;}
 
   #help{font-size:11px;line-height:1.6;padding:4px 10px 16px;max-width:740px;text-align:center;color:#7a83bb;}
   b{color:#ffd76a;}
@@ -125,8 +125,8 @@ const ctx = cv.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 const W = 512, H = 480;
 const NETX = 256, NETTOP = 184, NETBTM = 352;
-const LANEY = [210, 264, 318];          // 0:レフト(奥) 1:センター 2:ライト(手前) ※コート全体を使用
-const LANENAME = ['レフト', 'センター', 'ライト'];
+const LANEY = [210, 264, 318];          // 0:ライト(奥) 1:センター 2:レフト(手前) ※コート全体を使用
+const LANENAME = ['ライト', 'センター', 'レフト'];
 
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const rnd = Math.random;
@@ -1166,7 +1166,7 @@ function newMatch() {
         lines: ['最後はサーブ！観客の「歓声」で', 'サーブが強化されます。', 'ジャストでZ、エースを狙おう！'],
         comReceive: true },
     ];
-    G.tut = { i: 0, seq, step: seq[0].kind, popup: null, flags: {}, retryReceive: false };
+    G.tut = { i: 0, seq, step: seq[0].kind, popup: null, flags: {}, retryReceive: false, allowed: [] };
   }
   // 初期表示: サーブ側は守備陣形、受け手側はレシーブ隊形
   initFormation(M.serve, RFORM);
@@ -1209,6 +1209,7 @@ function setPhase(name) {
   if (name === 'plan') {
     M.plan = null; M.firstAtk = true; M.rally = 0;
     M.recv = null; M.atk = null; M.blk = null; M.result = null; M.ball = null;
+    M.lastAttacker = null;           // 直前ラリーの攻撃者情報を持ち越さない
     // スーパーレシーブの積み上げ・状態はラリーごとにリセット
     M.srGauge = 0; M.srActive = false; M.srLastReceiver = null; M.srStreak = 0;
     M.msg = (recvTeam === 0)
@@ -1553,10 +1554,11 @@ function pickReceiver(team, opt) {
     if (opt.float) {
       if (inLane.length) return pick(inLane);
     } else {
-      const r = rnd();
-      const libInLane = lib && onCourt.some(o => o.p === lib);
-      if (libInLane && r < 0.62) return lib;
-      if (inLane.length && r < 0.88) return pick(inLane);
+      // 原則そのコースにいる選手がレシーブ。リベロが隣のレーンに居る場合、3割の確率でリベロが横取りする。
+      const liberoInfo = lib ? onCourt.find(o => o.p === lib) : null;
+      const liberoAdj = liberoInfo && Math.abs(liberoInfo.lane - aim) === 1;
+      if (liberoAdj && rnd() < 0.3) return lib;
+      if (inLane.length) return pick(inLane);
     }
   } else {
     // ラリー中のディグ
@@ -2934,7 +2936,7 @@ function updMatch(pressed) {
       const a = M.score[0], b = M.score[1];
       const win = (Math.max(a, b) >= target && Math.abs(a - b) >= 2);
       if (win) {
-        G.scene = 'end'; G.winner = (a > b) ? 0 : 1;
+        G.scene = 'end'; G.winner = (a > b) ? 0 : 1; G.endT = G.t;
         if (G.winner === 0) { jingleWin(); } else { jingleLose(); }
       } else {
         setPhase('plan');
@@ -3363,6 +3365,9 @@ function resolveAttack(cfg) {
   const type = ATK[a.typeId];
   const A = TEAMS[at].players[a.attacker];
   statRec(A, 'atkTry');                    // アタック試行を記録
+  // 直前の攻撃者を退避してから今回の攻撃者で更新(直後の相手アタックの守備判定で使用)
+  const prevAttacker = M.lastAttacker;
+  M.lastAttacker = { player: A, team: at };
   // --- ストーリー: 自分の攻撃参加ボーナスXP ---
   if (G.mode === 'story' && at === 0 && A && A.isStory) {
     const act = a.typeId === 1 ? 'open' : a.typeId === 5 ? 'back' : a.typeId === 6 ? 'broad' : 'quick';
@@ -3460,7 +3465,9 @@ function resolveAttack(cfg) {
   }
   // ブロックアウト: アタッカーの精神力が高いほど増える。Bクイックは大きくボーナス。
   let blockoutP = clamp(0.12 + (A.mt - 60) * 0.005, 0.06, 0.40) + (type.boBonus || 0);
-  if (touched && (b.moveLate || type.boBonus) && rnd() < clamp(blockoutP, 0.06, 0.6)) {
+  const aimFront = type.quick && a.course === 'inner';   // クイック系で前衛(インナー)を狙うとブロックアウトが増えやすい
+  if (aimFront) blockoutP += 0.05;
+  if (touched && (b.moveLate || type.boBonus || aimFront) && rnd() < clamp(blockoutP, 0.06, 0.6)) {
     M.result = { winner: at, text: 'ブロックアウト! ' + A.name + 'のポイント!', kind: 'blockout', ap };
     statRec(A, 'atkKill');                  // ブロックアウトも得点
     return;
@@ -3475,6 +3482,8 @@ function resolveAttack(cfg) {
   if (df === 1) digP += cfg.dig;
   if (srBoost) digP -= 0.55;       // スーパーレシーブ後の攻撃は拾われにくい(ただし0%ではない)
   digP -= flowBuff(at, 'atk');     // 攻撃側が優勢ならアタックが決まりやすい(少)
+  // 直前にトスを受け攻撃参加した選手がそのまま次の相手アタックの守備に回ると、反応がわずかに遅れる
+  if (prevAttacker && prevAttacker.team === df && prevAttacker.player === D) digP -= 0.08;
   // スーパーレシーブの攻撃強化はこの攻撃で消費
   if (srBoost) M.srActive = false;
   if (rnd() < clamp(digP, 0.03, 0.92)) {
@@ -3490,9 +3499,9 @@ function resolveAttack(cfg) {
     evalSuperReceive(D, { isJustAtk: (a.grade === 'just'), success: true, afterSr: wasSrActive });
     const dove = ((a.grade === 'just') || ap >= 72) && rnd() < 0.55;
     if (dove) { diveAtkPenalty(D); flowEvent(df, 5); }   // ダイビングディグ: 流れ+5% / 攻撃優先度減
-    M.result = { winner: -1, text: D.name + ' 拾った!!', kind: 'dig', ap, digger: D, dive: dove };
+    M.result = { winner: -1, text: D.name + ' 拾った!!', kind: 'dig', ap, digger: D, dive: dove, touched };
   } else {
-    M.result = { winner: at, text: A.name + ' ' + type.name + 'が決まった!!', kind: 'kill', ap };
+    M.result = { winner: at, text: A.name + ' ' + type.name + 'が決まった!!', kind: 'kill', ap, touched };
     statRec(A, 'atkKill');                  // アタック決定(得点)
   }
 }
@@ -5055,6 +5064,7 @@ function updTutorial(pressed) {
       if ((isA(k) || k === 'Enter') && t.popup.t > 8) {
         const after = t.popup.after;
         t.popup = null;
+        t.allowed = [];             // ポップアップを閉じた直後は次フレームの分岐まで許可キーなし
         if (after) after();
         sGood();
         return true;
@@ -5068,6 +5078,7 @@ function updTutorial(pressed) {
   const c = t.seq[t.i];          // 現在のステップ設定
   if (!c) return false;
   t.guide = null;                // 常駐ガイドは毎フレーム再設定
+  t.allowed = [];                 // 許可キーも毎フレーム再設定(以下の各分岐でfilterKeysToが上書き)
 
   // 次ステップへ進む共通処理
   const advance = (after) => {
@@ -5114,7 +5125,7 @@ function updTutorial(pressed) {
           return false;
         }
         t.guide = { title: c.num + ' レシーブ', lines: ['レシーブ円が重なるのを待とう'] };
-        filterKeysTo(pressed, ['z']); removeKey(pressed, 'z');
+        filterKeysTo(pressed, []);
         return false;
       }
       return false;
@@ -5301,8 +5312,10 @@ function curTut() {
   return (G.tut && G.tut.seq) ? G.tut.seq[G.tut.i] : null;
 }
 
-/* pressed配列を許可キーのみに絞る(data-k値で判定) */
+/* pressed配列を許可キーのみに絞る(data-k値で判定)。同時にG.tut.allowedへ記録し、
+   ボタンUI(Z/X/V・作戦・方向)の色/グレー表示にそのまま反映できるようにする。 */
 function filterKeysTo(pressed, allowed) {
+  if (G.tut) G.tut.allowed = allowed;
   for (let i = pressed.length - 1; i >= 0; i--) {
     const k = pressed[i];
     const kk = (k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight') ? k
@@ -5754,6 +5767,10 @@ function drawOutcome() {
   }
   if (r.kind === 'blockout' && M.t > 8 && M.t % 8 < 5)
     shText('ブロックアウト!', NETX + dir * 60, 150, 15, '#ff8888', 'center');
+  // ブロックに当たり威力は弱まったが、シャットには至らなかった場合の表示
+  // (結果テキストや「ダイブ！」表示はy=150付近を使うため、重ならない上部の空きスペースに表示)
+  if (r.touched && (r.kind === 'kill' || r.kind === 'dig') && M.t > 8 && M.t % 8 < 5)
+    shText('ワンタッチ！', NETX + dir * 60, 104, 14, '#ffd76a', 'center');
   if (M.t > 16 && r.kind !== 'shut') shText(r.text, 256, 150, 15,
     r.kind === 'dig' ? '#7cffd0' : (r.winner === 0 ? '#7cff8a' : '#ff8888'), 'center');
 }
@@ -6209,7 +6226,29 @@ function drawEnd() {
   drawCourt();
   px(0, 0, W, H, 'rgba(10,8,40,.72)');
   const win = G.winner === 0;
-  shText(win ? 'YOU WIN!!' : 'YOU LOSE…', 256, 130, 40, win ? '#ffd040' : '#8890c8', 'center');
+  const et = G.t - (G.endT || 0);              // 'end'シーンに入ってからの経過フレーム
+  // ★勝利演出: 紙吹雪(降り注ぐ) + 登場インパクトフラッシュ
+  if (win) {
+    for (let i = 0; i < 40; i++) {
+      const seed = i * 977;
+      const speed = 1.6 + (i % 5) * 0.35;
+      const fy = ((et * speed + seed) % (H + 40)) - 20;
+      const fx = (seed * 37 % W) + Math.sin((et + seed) * 0.05) * 24;
+      const cw = (i % 3 === 0) ? 2 : 4;
+      const col = ['#ffd040', '#ff7090', '#7cff8a', '#7cd8ff', '#ffffff'][i % 5];
+      px(fx, fy, cw, 8, col);
+    }
+    if (et < 14) px(0, 0, W, H, 'rgba(255,255,255,' + Math.max(0, 0.6 - et * 0.045) + ')');
+  }
+  // タイトル文字: 勝利時はバウンドしながら拡大→等倍で登場
+  const introP = clamp(et / 18, 0, 1);
+  const scale = win ? lerp(2.4, 1, easeOut(introP)) : 1;
+  ctx.save();
+  ctx.translate(256, 150);
+  ctx.scale(scale, scale);
+  shText(win ? 'YOU WIN!!' : 'YOU LOSE…', 0, -20, 40, win ? '#ffd040' : '#8890c8', 'center');
+  ctx.restore();
+  if (win && et > 8 && et % 10 < 6) shText('★ ★ ★', 256, 96, 16, '#ffe080', 'center');
   shText(M.score[0] + ' - ' + M.score[1], 256, 192, 26, '#fff', 'center');
   text(win ? TEAMS[0].name + ' の しょうり!' : TEAMS[1].name + ' の しょうり…',
        256, 236, 13, '#e8ecff', 'center');
@@ -6548,7 +6587,7 @@ function actionBtnState() {
 }
 function matchBtnState() {
   if (!M) return { z: true, b: true, v: false };
-  if (G.tut) return { z: true, b: true, v: true };     // チュートリアル中は誤操作防止のため触らない
+  if (G.tut) return tutActionBtnState();               // チュートリアル中も実際の入力可否を反映
   if (M.toFx) return { z: false, b: false, v: false }; // タイムアウト演出中はポーズ
   if (M.flowMenu) return { z: true, b: true, v: true };// Vメニュー操作中
   const ph = M.phase, recvTeam = 1 - M.serve;
@@ -6566,10 +6605,23 @@ function matchBtnState() {
   }
   return { z, b, v };
 }
+/* チュートリアル中のZ/B/Vボタン状態。現在許可されている入力(G.tut.allowed)のみ有効にする。
+   B/Vはチュートリアルの流れでは使わないため常にグレー。ポップアップ表示中はZ(つづける)のみ有効。 */
+function tutActionBtnState() {
+  const t = G.tut;
+  if (t.popup) return { z: true, b: false, v: false };
+  const a = t.allowed || [];
+  return { z: a.includes('z'), b: false, v: false };
+}
 /* 作戦ボタン(1-6)が押せる文脈か。試合中の「プレイヤー作戦入力」と「プレイヤー攻撃の1回目タッチ」でのみ有効。*/
 function strategyBtnActive() {
   if (G.scene !== 'match' || !M) return false;
   if (M.toFx || M.flowMenu || statView) return false;
+  if (G.tut) {
+    if (G.tut.popup) return false;
+    const a = G.tut.allowed || [];
+    return a.some(k => k.length === 1 && k >= '1' && k <= '6');
+  }
   if (M.phase === 'plan' && (1 - M.serve) === 0) return true;                 // プレイヤーが作戦入力
   if (M.phase === 'attackSeq' && M.atkTeam === 0 && M.atk && !M.atk.touched && M.t < TOSS_MID) return true;  // 攻撃1回目タッチ
   return false;
@@ -6592,7 +6644,7 @@ function dirBtnState() {
 }
 function matchDirState() {
   if (!M) return { u:1, d:1, l:1, r:1 };
-  if (G.tut) return { u:1, d:1, l:1, r:1 };           // チュートリアル中は触らない
+  if (G.tut) return tutDirBtnState();                 // チュートリアル中も実際の入力可否を反映
   if (M.toFx) return { u:0, d:0, l:0, r:0 };           // タイムアウト演出中
   if (M.flowMenu) return { u:1, d:1, l:0, r:0 };       // Vメニュー: 上下で選択
   let u=0, d=0, l=0, r=0;
@@ -6610,6 +6662,14 @@ function matchDirState() {
     // plan / serveFly / point / whistle 等は矢印未使用 → 全てグレー
   }
   return { u, d, l, r };
+}
+/* チュートリアル中の方向ボタン状態。現在許可されている入力(G.tut.allowed)を反映する。 */
+function tutDirBtnState() {
+  const t = G.tut;
+  if (t.popup) return { u:0, d:0, l:0, r:0 };
+  const a = t.allowed || [];
+  return { u: a.includes('ArrowUp') ? 1 : 0, d: a.includes('ArrowDown') ? 1 : 0,
+           l: a.includes('ArrowLeft') ? 1 : 0, r: a.includes('ArrowRight') ? 1 : 0 };
 }
 let _btnEls = null, _numEls = null, _dirEls = null;
 function syncActionButtons() {
