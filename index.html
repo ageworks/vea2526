@@ -577,7 +577,7 @@ function updateBGM() {
           || sc === 'storyName' || sc === 'storyPos' || sc === 'storyTeam' || sc === 'storyLevel'
           || sc === 'leagueSizeSelect' || sc === 'teamSelect' || sc === 'rivalSelect'
           || sc === 'oppSelect' || sc === 'roster'
-          || sc === 'growthTeamName' || sc === 'growthAbbr' || sc === 'growthColorMain'
+          || sc === 'growthLevel' || sc === 'growthTeamName' || sc === 'growthAbbr' || sc === 'growthColorMain'
           || sc === 'growthColorSub' || sc === 'growthSquad' || sc === 'growthSquadConfirm') {
     // モード選択 / セーブデータ / 難易度 / チーム / 選手 / グロースチーム作成 等の選択画面: 選択BGM(強化版)
     startBGM('select');
@@ -869,6 +869,7 @@ const GROWTH_INITIAL_SQUAD = 14;
 const GROWTH_MIN_SQUAD = 12;      // 移籍によってチームがこれを下回ることは無い(一時的にも)
 const GROWTH_MAX_SQUAD = 28;
 const GROWTH_MAX_SIGNINGS = 3;
+const GROWTH_LEVELS = [4, 5];   // LVキー(プレーオフ/SV級)の2択
 const GROWTH_HOME_BASE = 400;
 const GROWTH_RANK_BONUS = [3600, 3000, 2400, 2000, 1800, 1600, 1400, 1200, 1000, 800];   // index0=1位…index9=10位
 // 各ポジションの最低必要人数(これを割り込むと即座に補充選手が入る)。合計14人。
@@ -1275,7 +1276,7 @@ function noise(p, base) {
   return base + (rnd() * 2 - 1) * range;
 }
 function drain(p, n) {
-  if (G.mode === 'story') n *= 1.5;   // ストーリーは15点マッチのため体力消費を1.5倍
+  if (G.mode === 'story' || G.mode === 'growth') n *= 1.5;   // 15点マッチ(ストーリー/グロースリーグ)は体力消費を1.5倍
   p.st = clamp(p.st - n, 0, 100);
 }
 
@@ -1462,7 +1463,7 @@ function newMatch() {
     run: { team: -1, len: 0 },  // 連続得点の記録(team=得点側, len=連続数)
   };
   // リーグ戦/ストーリー: ホームチームをコート視点で設定(自チーム=team0)
-  if ((G.mode === 'league' || G.mode === 'story') && G.homeForMatch !== undefined && G.homeForMatch !== null) {
+  if ((G.mode === 'league' || G.mode === 'story' || G.mode === 'growth') && G.homeForMatch !== undefined && G.homeForMatch !== null) {
     M.homeTeam = (G.homeForMatch === G.myTeam) ? 0 : 1;
   }
   // 個人スタッツ枠を両チーム全選手分用意
@@ -1850,7 +1851,7 @@ function hasFlow(team) { return flowZone() === team; }
 function flowBonusAdd(team, positive) {
   if (!positive) return 0;
   let add = 0;
-  if ((G.mode === 'league' || G.mode === 'story') && M.homeTeam === team) add += 5;
+  if ((G.mode === 'league' || G.mode === 'story' || G.mode === 'growth') && M.homeTeam === team) add += 5;
   if (M.subBoostPts && M.subBoostPts[team] > 0) add += 10;
   return add;
 }
@@ -1878,7 +1879,7 @@ function flowBuff(team, kind) {
 
 /* ---------------- タイムアウト ---------------- */
 // 戦術バフの持続得点数(誰の得点でも1消費): 25点マッチ=6得点/15点マッチ(ストーリー)=4得点
-function buffDurationPts() { return (G.mode === 'story') ? 4 : 6; }
+function buffDurationPts() { return (G.mode === 'story' || G.mode === 'growth') ? 4 : 6; }
 // タイムアウト発動: 両チーム全選手 体力+10。流れが無い側が取ればゲージを中央に戻す。
 // kind省略時(COM等)はランダムに戦術バフを選ぶ。バフの持続得点数は25点マッチ=6得点/15点マッチ=4得点。
 function takeTimeout(team, kind) {
@@ -1906,7 +1907,7 @@ function maybeComTimeout() {
   if (!M.timeouts || M.timeouts[1] <= 0) return false;
   if (flowZone() !== 0) return false;            // 流れがプレイヤー側のときのみ
   const ps = M.score[0], cs = M.score[1];        // プレイヤー / COM の得点
-  const target = (G.mode === 'story') ? 15 : 25;
+  const target = (G.mode === 'story' || G.mode === 'growth') ? 15 : 25;
   const run0 = (M.run && M.run.team === 0) ? M.run.len : 0;   // プレイヤーの連続得点数
   let trigger = false;
   // ① プレイヤーに5点差をつけられ、プレイヤーの攻撃(連続得点)が続いている
@@ -2131,6 +2132,7 @@ function update() {
   if (G.scene === 'rivalSelect') return updRivalSelect(pressed);
   if (G.scene === 'oppSelect')   return updOppSelect(pressed);
   if (G.scene === 'roster')      return updRoster(pressed);
+  if (G.scene === 'growthLevel')     return updGrowthLevel(pressed);
   if (G.scene === 'growthTeamName')  return updGrowthTeamName(pressed);
   if (G.scene === 'growthAbbr')      return updGrowthAbbr(pressed);
   if (G.scene === 'growthColorMain') return updGrowthColorMain(pressed);
@@ -2235,7 +2237,7 @@ function beginNewGameForMode() {
     G.growth = null;
     G.growthSetup = { nameChars: [], name: '', abbrChars: [], abbr: '', mainColor: -1, subColor: -1,
                        points: GROWTH_INITIAL_POINTS, picked: [] };
-    G.scene = 'growthTeamName'; G.cursor = 0;
+    G.scene = 'growthLevel'; G.cursor = 0;
   } else { // tournament
     G.scene = 'levelSelect'; G.cursor = G.level - 1;
   }
@@ -2966,7 +2968,7 @@ function leagueSimMatch(home, away) {
   const sh = teamStrength(home) + 4 + rnd() * 16;   // ホーム微有利
   const sa = teamStrength(away) + rnd() * 16;
   const homeWin = sh >= sa;
-  const tgt = (G.mode === 'story') ? 15 : 25;
+  const tgt = (G.mode === 'story' || G.mode === 'growth') ? 15 : 25;
   const ws = tgt, ls = ri(Math.max(0, tgt - 10), tgt - 2);   // 勝者=目標点、敗者は数点差
   const hs = homeWin ? ws : ls, as = homeWin ? ls : ws;
   leagueApplyResult(home, away, hs, as);
@@ -3509,6 +3511,20 @@ function growthApplyRenewal() {
 }
 
 /* ===== グロースリーグ: シーン処理(チーム作成) ===== */
+/* グロースリーグ: 難易度選択(プレーオフ/SV級の2択) */
+function updGrowthLevel(pressed) {
+  for (const k of pressed) {
+    if (k === 'ArrowUp')   { G.cursor = (G.cursor - 1 + GROWTH_LEVELS.length) % GROWTH_LEVELS.length; sCursor(); }
+    if (k === 'ArrowDown') { G.cursor = (G.cursor + 1) % GROWTH_LEVELS.length; sCursor(); }
+    if (isA(k) || k === 'Enter') {
+      const lvKey = GROWTH_LEVELS[G.cursor];
+      G.level = lvKey;
+      if (G.growthSetup) G.growthSetup.level = lvKey;
+      G.scene = 'growthTeamName'; G.cursor = 0; sGood();
+    }
+    if (isB(k) || k === 'Escape') { G.scene = 'modeSelect'; G.cursor = 4; sCursor(); }
+  }
+}
 function updGrowthTeamName(pressed) {
   const gs = G.growthSetup; if (!gs) { G.scene = 'modeSelect'; return; }
   const chars = KANA_KATA, cols = 13;
@@ -3521,7 +3537,7 @@ function updGrowthTeamName(pressed) {
       if (gs.nameChars.length < 8) { gs.nameChars.push(chars[G.cursor]); sGood(); }
     } else if (isB(k)) {
       if (gs.nameChars.length > 0) { gs.nameChars.pop(); sCursor(); }
-      else { G.scene = 'modeSelect'; G.cursor = 4; sCursor(); }
+      else { G.scene = 'growthLevel'; G.cursor = GROWTH_LEVELS.indexOf(gs.level) >= 0 ? GROWTH_LEVELS.indexOf(gs.level) : 0; sCursor(); }
     } else if (isV(k)) {
       gs.name = gs.nameChars.join('') || 'グロース';
       G.scene = 'growthAbbr'; G.cursor = 0; sGood();
@@ -3892,7 +3908,7 @@ function updEnd(pressed) {
       if (G.mode === 'tournament' && G.tourney) {
         // トーナメント: 結果をブラケットに反映してトーナメント画面へ
         tnReportResult(G.winner === 0);
-      } else if ((G.mode === 'league' || G.mode === 'story') && G.league) {
+      } else if ((G.mode === 'league' || G.mode === 'story' || G.mode === 'growth') && G.league) {
         lgReportResult();
       } else {
         G.scene = 'title'; G.titleStarted = false; G.cursor = 0; sCursor();
@@ -4196,7 +4212,7 @@ function updMatch(pressed) {
     if (M.t > 130) {
       // ラリーポイント制: 目標点以上かつ2点差で勝利。デュースは2点差まで継続。
       // ストーリーモードは15点マッチ、それ以外は25点。
-      const target = (G.mode === 'story') ? 15 : 25;
+      const target = (G.mode === 'story' || G.mode === 'growth') ? 15 : 25;
       const a = M.score[0], b = M.score[1];
       const win = (Math.max(a, b) >= target && Math.abs(a - b) >= 2);
       if (win) {
@@ -5251,7 +5267,7 @@ function recolorCrowd() {
   if (!TEAMS[0] || !TEAMS[1]) return;
   const c0 = TEAMS[0].shirt, c1 = TEAMS[1].shirt;
   // リーグ戦: ホームチームの色が8割、アウェイチームの色が2割(会場全体)
-  if (typeof M !== 'undefined' && M && M.homeTeam !== null && M.homeTeam !== undefined && (G.mode === 'league' || G.mode === 'story')) {
+  if (typeof M !== 'undefined' && M && M.homeTeam !== null && M.homeTeam !== undefined && (G.mode === 'league' || G.mode === 'story' || G.mode === 'growth')) {
     const homeColor = M.homeTeam === 0 ? c0 : c1;
     const awayColor = M.homeTeam === 0 ? c1 : c0;
     for (const c of crowd) {
@@ -5737,7 +5753,7 @@ function drawHUD() {
   px(0, H - 52, W, 2, '#4858a0');
   if (M && M.msg) text(M.msg, 10, H - 44, 12, '#e8ecff');
   const lv = LV[G.level];
-  const target = (G.mode === 'story') ? 15 : 25;
+  const target = (G.mode === 'story' || G.mode === 'growth') ? 15 : 25;
   text('LV' + G.level + ' ' + lv.name + '  ' + target + '点先取', W - 8, H - 22, 11, '#8a96d8', 'right');
   if (M) {
     const sv = M.serve === 0 ? '▶あなた' : '▶COM';
@@ -7683,6 +7699,25 @@ function drawRoster() {
 }
 
 /* ===== グロースリーグ: チーム作成画面の描画 ===== */
+/* グロースリーグ: 難易度選択画面 */
+function drawGrowthLevel() {
+  px(0, 0, W, H, '#0c1430');
+  shText('難易度選択', 256, 40, 24, '#ffd040', 'center');
+  text('グロースリーグで挑むレベルを選択(15点マッチ)', 256, 74, 12, '#9ad0ff', 'center');
+  const descs = {
+    4: '相手が強い。歯ごたえあり',
+    5: '最高難度。トップレベルの戦い',
+  };
+  for (let i = 0; i < GROWTH_LEVELS.length; i++) {
+    const lvKey = GROWTH_LEVELS[i], sel = G.cursor === i, lv = LV[lvKey];
+    const yy = 120 + i * 64, h = 54;
+    px(80, yy, 352, h, sel ? '#28336e' : '#181a38');
+    if (sel) { ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 2; ctx.strokeRect(81, yy + 1, 350, h - 2); }
+    shText((sel ? '▶ ' : '') + 'LV' + lvKey + '  ' + lv.name, 256, yy + 10, 16, sel ? '#ffd76a' : '#cfd8ff', 'center');
+    text(descs[lvKey] || '', 256, yy + 34, 10, '#9aa6d8', 'center');
+  }
+  if (G.t % 60 < 38) text('↑↓で選択・Zで決定 / Xで戻る', 256, 400, 11, '#7cff8a', 'center');
+}
 function drawGrowthTeamName() {
   px(0, 0, W, H, '#0c1430');
   shText('チーム名を入力(カタカナ8文字まで)', 256, 16, 16, '#ffd040', 'center');
@@ -8522,7 +8557,7 @@ function strategyBtnActive() {
 const DIR_MAP = {
   title:{u:0,d:0,l:0,r:0}, modeSelect:{u:1,d:1,l:0,r:0}, saveSlotSelect:{u:1,d:1,l:0,r:0},
   continuePrompt:{u:1,d:1,l:0,r:0}, leagueSizeSelect:{u:1,d:1,l:0,r:0}, storyName:{u:1,d:1,l:1,r:1},
-  storyPos:{u:1,d:1,l:0,r:0}, storyTeam:{u:1,d:1,l:1,r:1}, storyLevel:{u:1,d:1,l:0,r:0},
+  storyPos:{u:1,d:1,l:0,r:0}, storyTeam:{u:1,d:1,l:1,r:1}, storyLevel:{u:1,d:1,l:0,r:0}, growthLevel:{u:1,d:1,l:0,r:0},
   storyProfile:{u:0,d:0,l:0,r:0}, levelSelect:{u:1,d:1,l:0,r:0}, teamSelect:{u:1,d:1,l:1,r:1},
   rivalSelect:{u:1,d:1,l:1,r:1}, oppSelect:{u:1,d:1,l:1,r:1}, roster:{u:1,d:1,l:1,r:1},
   tourney:{u:0,d:0,l:0,r:0}, league:{u:0,d:0,l:1,r:1}, end:{u:0,d:0,l:0,r:0}, seasonSummary:{u:0,d:0,l:0,r:0},
@@ -8620,6 +8655,7 @@ function frame() {
   else if (G.scene === 'rivalSelect') drawRivalSelect();
   else if (G.scene === 'oppSelect') drawOppSelect();
   else if (G.scene === 'roster') drawRoster();
+  else if (G.scene === 'growthLevel') drawGrowthLevel();
   else if (G.scene === 'growthTeamName') drawGrowthTeamName();
   else if (G.scene === 'growthAbbr') drawGrowthAbbr();
   else if (G.scene === 'growthColorMain') drawGrowthColorMain();
